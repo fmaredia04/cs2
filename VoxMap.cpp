@@ -3,7 +3,9 @@
 #include <iostream>
 #include <fstream>
 #include <queue>
+#include <string>
 #include <cstdio>
+#include <forward_list>
 using namespace std;
 
 bool VoxMap::isValid(Point p) const {
@@ -222,6 +224,34 @@ void VoxMap::mark(Voxel& at, const Direction &from, const Tracker &new_state, qu
   if (at.fall == 0) q.push(at);
 }
 
+std::string VoxMap::dir_to_log(const Direction &dir) {
+  switch (dir) {
+    case _NORTH:
+      return " magenta_glazed_terracotta[facing=north]";
+    case _SOUTH:
+      return " magenta_glazed_terracotta[facing=south]";
+    case _EAST:
+      return " magenta_glazed_terracotta[facing=east]";
+    case _WEST:
+      return " magenta_glazed_terracotta[facing=west]";
+    case DOWN:
+      return " redstone_block";
+    default:
+      return "";
+  }
+  return "";
+}
+
+std::string VoxMap::vxl_to_log(const Voxel &v) {
+  std::string builder = "";
+  builder += to_string(v.self.x);
+  builder += " ";
+  builder += to_string(v.self.y);
+  builder += " ";
+  builder += to_string(v.self.z);
+  return builder;
+}
+
 Route VoxMap::route(Point src, Point dst) {
   if(!isValid(src) || map[src.z][src.y][src.x].fall > 0 || map[src.z][src.y][src.x].fall < 0 ){
     throw InvalidPoint(src);
@@ -238,7 +268,6 @@ Route VoxMap::route(Point src, Point dst) {
 
   fstream log;
   log.open("./path.log", ios::out);
-  log << src.x << " " << src.y << " " << src.z << endl;
 
   Voxel* start = &at(src);
   start->state = SOURCE;
@@ -248,133 +277,125 @@ Route VoxMap::route(Point src, Point dst) {
   end->state = TARGET;
   target.push(end);
 
+
+  forward_list<Voxel*> visited;
+  visited.push_front(start);
+  visited.push_front(end);
+
   while (!found) {
     if (source.empty()) throw NoRoute(src, dst);
     Voxel* parent = source.front();
     source.pop();
 
-    for (Direction d = Direction::_NORTH; d < 4; d = Direction(d+1)) {
+    for (short i = 0; i < 4; i++) {
+      Direction d = Direction(i);
 
       // Valid move ?
       Point inc = parent->self.inc(d);
       if (!isValid(inc)) continue;
-      Voxel* curr = &at(inc);
-      if (curr->fall == -1 || curr->fall >= 50000) continue;
 
+      Voxel* curr = &at(inc);
+      if (curr->fall >= 50000) continue;
+      if (curr->state == SOURCE) continue;
+      // cout << curr->self.inc(UP).z << " " << curr->self.inc(UP).y << " " << curr->self.inc(UP).x << endl;
+      // cout << "Valid: " << isValid(curr->self.inc(UP)) << endl;
+      // cout << (curr->self.inc(UP).z < bounds.z) << endl;
+      // cout << bounds.z << " Y: " << bounds.y << endl;
+      if (isValid(curr->self.inc(UP)) && curr->fall == -1 && (at(curr->self.inc(UP)).fall == 0 && at(parent->self.inc(UP)).fall >= 1)) {
+        curr = &at(curr->self.inc(UP));
+      } else if (curr->fall == -1) continue;
+
+      // if we have a fall, mark the top block and the bottom block
       if (curr->fall > 0) {
         curr->state = SOURCE;
         curr->dir = d;
+        visited.push_front(curr);
         curr = &at({curr->self.x, curr->self.y, curr->self.z - curr->fall});
-          
+        d = DOWN;
       }
 
-      // Valid push / have we found a Target path
-      if (curr->state == TARGET) {
-        source.push(curr);
-        found = true;
-        cout << "found" << endl;
-        break;
-      }
+      //updated curr repeat checking
       if (curr->state == SOURCE) continue;
 
-      log << curr->self.x << " " << curr->self.y << " " << curr->self.z << endl;
+      // We are in a target both
+      if (curr->state == TARGET) {
+        curr->dir = d;
+        source.push(curr);
+        found = true;
+        break;
+      }
+
+      //log << curr->self.x << " " << curr->self.y << " " << curr->self.z << endl;
 
       //Add to queue
       curr->state = SOURCE;
       curr->dir = d;
       source.push(curr);
-      
+      visited.push_front(curr);
     }
 
   }
   
+  forward_list<Move> route;
+  Voxel* curr = source.back();
+  
+
+  while (curr->dir != DEFAULT) {
+  
+   // bool fell = false;
+    if (curr->dir == DOWN) {
+      //fell = true;
+      for (curr = curr; curr->dir < 0 || curr->dir > 3; curr = &at(curr->self.inc(UP)));
+    }
 
 
-  // mark((*this)[src], START, '$', source);
-  // mark((*this)[dst], END, '#', target);
-  // while(!found && !source.empty()){
-  //   Voxel parent = source.front();
-  //   source.pop();
+    //Decide a direction, push to route, increment Voxel
+    switch (curr->dir) {
+      case _NORTH:
+        route.push_front(NORTH);
+        curr = &at(curr->self.inc(_SOUTH));
+        log << curr->self.x << " " << curr->self.y << " " << curr->self.z << endl;
+        if (curr->fall >= 1) curr = &at(curr->self.inc(DOWN));
+        break;
+      case _SOUTH:
+        route.push_front(SOUTH);
+        curr = &at(curr->self.inc(_NORTH));
+        log << curr->self.x << " " << curr->self.y << " " << curr->self.z << endl;
+        if (curr->fall >= 1) curr = &at(curr->self.inc(DOWN));
+        break;
+      case _EAST:
+        route.push_front(EAST);
+        //log << curr->self.x << " " << curr->self.y << " " << curr->self.z << endl;
+        curr = &at(curr->self.inc(_WEST));
+        log << curr->self.x << " " << curr->self.y << " " << curr->self.z << endl;
+        if (curr->fall >= 1) curr = &at(curr->self.inc(DOWN));
+        break;
+      case _WEST:
+        route.push_front(WEST);
+        //log << curr->self.x << " " << curr->self.y << " " << curr->self.z << endl;
+        curr = &at(curr->self.inc(_EAST));
+        log << curr->self.x << " " << curr->self.y << " " << curr->self.z << endl;
+        if (curr->fall >= 1) curr = &at(curr->self.inc(DOWN));
+        break;
+      default:
+        cout << curr->self.x << " " << curr->self.y << " " << curr->self.z << " " << curr->dir << endl;
+        throw runtime_error("Something bad happened");
+    }
+  }
 
-  //   for(Direction d = Direction::_NORTH; d < 4; d = Direction(d+1)){
-  //     if(isValid(parent.self.inc(d).z,parent.self.inc(d).y,parent.self.inc(d).x)){
-  //       Voxel curr = (*this)[parent.self.inc(d)];
-  //       // land in front is flat
-  //       if(curr.fall == 0){
-  //         if(curr.path_sign == 'x'){
-  //           mark(curr,d,'$',source);
-  //         }
-  //         else if(curr.path_sign == '#'){
-  //           found = true;
-  //           source.push(curr);
-  //           cout << "Found!" << endl;
-  //           break;
-  //         }
-  //       }
-        
-  //     }
 
-  //   }
-  // }
+  while (!visited.empty()) {
+    Voxel* clear = visited.front();
+    visited.pop_front();
 
+    clear->state = UNSEEN;
+    clear->dir = DEFAULT;
+  }
  
-  throw NoRoute(src, dst);
+  log.close();
+
+  return Route(route.begin(), route.end());
 }
 
 
 
-//  while (!found && !source.empty()) {
-//     cout << source.front().self.x << endl;
-//     Voxel parent = source.front();
-//     source.pop();
-
-//     for (Direction d = Direction::_NORTH; d < 4; d = Direction(d + 1)) {
-//       if(isValid(parent.self.inc(d))){
-//       Voxel curr = (*this)[parent.self.inc(d)];
-//           try {
-//             if (curr.fall == 0) {
-//               if (curr.dir == DEFAULT) {
-//                 mark(curr, d, '$', source);
-//               }
-//               else if (curr.path_sign == '#') {
-//                 found = true;
-//                 source.push(curr);
-//                 break;
-//               }
-//             }
-//             else if (curr.fall > 0 && curr.fall < 50000) {
-//               if(curr.dir == DEFAULT){
-//                 mark(curr, d, '$', source);
-//                 if(isValid((curr.self.z - curr.fall), curr.self.y, curr.self.x)){
-//                   curr = (*this)[{curr.self.z - curr.fall, curr.self.y, curr.self.x}];
-//                   mark(curr, Direction::DOWN, '$', source);
-//                 }
-//               }
-//               else if (curr.path_sign == '#' && isValid((curr.self.z - curr.fall), curr.self.y, curr.self.x) && map[(curr.self.z - curr.fall)][curr.self.y][curr.self.x].path_sign == '#') {
-//                 found = true;
-//                 source.push(curr);
-//                 break;
-//               }
-//             }
-//             else if(isValid(curr.self.inc(UP)) && isValid(parent.self.inc(UP))){
-//               if (curr.fall == -1 && (*this)[curr.self.inc(UP)].fall == 0 && (*this)[parent.self.inc(UP)].fall >= 0){
-
-//                 curr = (*this)[curr.self.inc(UP)];
-//                 if(curr.dir == DEFAULT){
-//                   mark(curr, d, '$', source);
-//                 }
-//                 else if (curr.path_sign == '#') {
-//                   found = true;
-//                   source.push(curr);
-//                   break;
-//                 }
-//               }
-//             }
-//           } catch (const InvalidPoint &e) {
-//             continue;
-//           }
-//       }
-//   }
-
-//   }
-//   if (source.empty()) throw NoRoute(src, dst);

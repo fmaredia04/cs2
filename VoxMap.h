@@ -55,6 +55,8 @@ class VoxMap {
   Voxel& at(int x, int y, int z);
   Voxel& at(Point p);
   void mark(Voxel& at, const Direction &from, const Tracker &new_state, std::queue<Voxel> &q);
+  static std::string dir_to_log(const Direction &dir);
+  static std::string vxl_to_log(const Voxel &v);
 
 
 public:
