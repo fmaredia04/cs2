@@ -218,40 +218,6 @@ VoxMap::~VoxMap(){
   delete[] map; 
 }
 
-void VoxMap::mark(Voxel& at, const Direction &from, const Tracker &new_state, queue<Voxel> &q) {
-  at.state = new_state;
-  at.dir = from;
-  if (at.fall == 0) q.push(at);
-}
-
-std::string VoxMap::dir_to_log(const Direction &dir) {
-  switch (dir) {
-    case _NORTH:
-      return " magenta_glazed_terracotta[facing=north]";
-    case _SOUTH:
-      return " magenta_glazed_terracotta[facing=south]";
-    case _EAST:
-      return " magenta_glazed_terracotta[facing=east]";
-    case _WEST:
-      return " magenta_glazed_terracotta[facing=west]";
-    case DOWN:
-      return " redstone_block";
-    default:
-      return "";
-  }
-  return "";
-}
-
-std::string VoxMap::vxl_to_log(const Voxel &v) {
-  std::string builder = "";
-  builder += to_string(v.self.x);
-  builder += " ";
-  builder += to_string(v.self.y);
-  builder += " ";
-  builder += to_string(v.self.z);
-  return builder;
-}
-
 Route VoxMap::route(Point src, Point dst) {
   if(!isValid(src) || map[src.z][src.y][src.x].fall > 0 || map[src.z][src.y][src.x].fall < 0 ){
     throw InvalidPoint(src);
@@ -261,21 +227,15 @@ Route VoxMap::route(Point src, Point dst) {
   }
 
   queue<Voxel*> source;
-  queue<Voxel*> target;
   bool found = false;
-
-  remove("./path.log");
-
-  fstream log;
-  log.open("./path.log", ios::out);
 
   Voxel* start = &at(src);
   start->state = SOURCE;
+  start->parent = {src.x,src.y,src.z};
   source.push(start);
 
   Voxel* end = &at(dst);
   end->state = TARGET;
-  target.push(end);
 
 
   forward_list<Voxel*> visited;
@@ -283,7 +243,16 @@ Route VoxMap::route(Point src, Point dst) {
   visited.push_front(end);
 
   while (!found) {
-    if (source.empty()) throw NoRoute(src, dst);
+    if (source.empty()){
+      while (!visited.empty()) {
+      Voxel* clear = visited.front();
+      visited.pop_front();
+
+      clear->state = UNSEEN;
+      clear->parent = {-1,-1,-1};
+      }
+     throw NoRoute(src, dst);
+    }
     Voxel* parent = source.front();
     source.pop();
 
@@ -308,7 +277,7 @@ Route VoxMap::route(Point src, Point dst) {
       // if we have a fall, mark the top block and the bottom block
       if (curr->fall > 0) {
         curr->state = SOURCE;
-        curr->dir = d;
+        curr->parent = {parent->self.x,parent->self.y,parent->self.z};
         visited.push_front(curr);
         curr = &at({curr->self.x, curr->self.y, curr->self.z - curr->fall});
         d = DOWN;
@@ -319,7 +288,7 @@ Route VoxMap::route(Point src, Point dst) {
 
       // We are in a target both
       if (curr->state == TARGET) {
-        curr->dir = d;
+        curr->parent = {parent->self.x,parent->self.y,parent->self.z};
         source.push(curr);
         found = true;
         break;
@@ -329,7 +298,7 @@ Route VoxMap::route(Point src, Point dst) {
 
       //Add to queue
       curr->state = SOURCE;
-      curr->dir = d;
+      curr->parent = {parent->self.x,parent->self.y,parent->self.z};
       source.push(curr);
       visited.push_front(curr);
     }
@@ -339,47 +308,31 @@ Route VoxMap::route(Point src, Point dst) {
   forward_list<Move> route;
   Voxel* curr = source.back();
   
+  // Make while loop to retrace the steps
+  while (curr->self.x != curr->parent.x || curr->self.y != curr->parent.y || curr->self.z != curr->parent.z) {
+    //cout << "Curr: " << curr->self.x << "," << curr->self.y << "," << curr->self.z << " Parent: " << curr->parent.x << "," << curr->parent.y << "," << curr->parent.z <<endl;
 
-  while (curr->dir != DEFAULT) {
-  
    // bool fell = false;
-    if (curr->dir == DOWN) {
-      //fell = true;
-      for (curr = curr; curr->dir < 0 || curr->dir > 3; curr = &at(curr->self.inc(UP)));
+    // if (curr->dir == DOWN) {
+    //   //fell = true;
+    //   for (curr = curr; curr->dir < 0 || curr->dir > 3; curr = &at(curr->self.inc(UP)));
+    // }
+
+    if(curr->self.y < curr->parent.y){
+      route.push_front(NORTH);
+      curr = &at(curr->parent);
     }
-
-
-    //Decide a direction, push to route, increment Voxel
-    switch (curr->dir) {
-      case _NORTH:
-        route.push_front(NORTH);
-        curr = &at(curr->self.inc(_SOUTH));
-        log << curr->self.x << " " << curr->self.y << " " << curr->self.z << endl;
-        if (curr->fall >= 1) curr = &at(curr->self.inc(DOWN));
-        break;
-      case _SOUTH:
-        route.push_front(SOUTH);
-        curr = &at(curr->self.inc(_NORTH));
-        log << curr->self.x << " " << curr->self.y << " " << curr->self.z << endl;
-        if (curr->fall >= 1) curr = &at(curr->self.inc(DOWN));
-        break;
-      case _EAST:
-        route.push_front(EAST);
-        //log << curr->self.x << " " << curr->self.y << " " << curr->self.z << endl;
-        curr = &at(curr->self.inc(_WEST));
-        log << curr->self.x << " " << curr->self.y << " " << curr->self.z << endl;
-        if (curr->fall >= 1) curr = &at(curr->self.inc(DOWN));
-        break;
-      case _WEST:
-        route.push_front(WEST);
-        //log << curr->self.x << " " << curr->self.y << " " << curr->self.z << endl;
-        curr = &at(curr->self.inc(_EAST));
-        log << curr->self.x << " " << curr->self.y << " " << curr->self.z << endl;
-        if (curr->fall >= 1) curr = &at(curr->self.inc(DOWN));
-        break;
-      default:
-        cout << curr->self.x << " " << curr->self.y << " " << curr->self.z << " " << curr->dir << endl;
-        throw runtime_error("Something bad happened");
+    else if(curr->self.y > curr->parent.y){
+      route.push_front(SOUTH);
+      curr = &at(curr->parent);
+    }
+    else if(curr->self.x > curr->parent.x){
+      route.push_front(EAST);
+      curr = &at(curr->parent);
+    }
+    else if(curr->self.x < curr->parent.x){
+      route.push_front(WEST);
+      curr = &at(curr->parent);
     }
   }
 
@@ -389,11 +342,9 @@ Route VoxMap::route(Point src, Point dst) {
     visited.pop_front();
 
     clear->state = UNSEEN;
-    clear->dir = DEFAULT;
+    clear->parent = {-1,-1,-1};
   }
- 
-  log.close();
-
+  //cout << route.empty() << endl;
   return Route(route.begin(), route.end());
 }
 

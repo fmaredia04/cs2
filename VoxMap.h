@@ -18,7 +18,7 @@ class VoxMap {
   // Member Variables
   struct Voxel {
     Tracker state;
-    Direction dir;
+    Point parent;
     Point self;
     int fall;
 
@@ -26,7 +26,9 @@ class VoxMap {
       Voxel(int f){
         fall = f;
         state = UNSEEN;
-        dir = DEFAULT;
+        parent.x = -1;
+        parent.y = -1;
+        parent.z = -1;
       }
       Voxel(int f, int z, int y, int x){
         fall = f;
@@ -34,12 +36,16 @@ class VoxMap {
         self.x = x;
         self.y = y;
         self.z = z;
-        dir = DEFAULT;
+        parent.x = -1;
+        parent.y = -1;
+        parent.z = -1;
       }
       Voxel(){
         fall = -1;
         state = UNSEEN;
-        dir = DEFAULT;
+        parent.x = -1;
+        parent.y = -1;
+        parent.z = -1;
       }
   };
 
@@ -54,9 +60,6 @@ class VoxMap {
   Voxel& operator[] (Point p);
   Voxel& at(int x, int y, int z);
   Voxel& at(Point p);
-  void mark(Voxel& at, const Direction &from, const Tracker &new_state, std::queue<Voxel> &q);
-  static std::string dir_to_log(const Direction &dir);
-  static std::string vxl_to_log(const Voxel &v);
 
 
 public:
